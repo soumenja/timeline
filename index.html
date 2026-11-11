@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.github.com; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <title>My Timeline</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f2a37'/%3E%3Cpath d='M5 17h22' stroke='%23fff' stroke-width='2.5'/%3E%3Ccircle cx='11' cy='17' r='3.5' fill='%2337a70b'/%3E%3Ccircle cx='22' cy='17' r='3.5' fill='%23f56c00'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+
+<!-- ============ Lock / setup screen ============ -->
+<section id="gate" class="gate">
+  <div class="gate-card">
+    <div class="gate-logo" aria-hidden="true"><span></span><span></span></div>
+
+    <div id="gate-loading">
+      <h1>My Timeline</h1>
+      <p class="muted">Loading…</p>
+    </div>
+
+    <form id="unlock-form" hidden>
+      <h1>My Timeline</h1>
+      <p class="muted">This timeline is encrypted. Enter your passphrase to open it.</p>
+      <label class="field">
+        <span>Passphrase</span>
+        <input id="unlock-pass" type="password" autocomplete="current-password" required>
+      </label>
+      <p id="unlock-error" class="error" hidden></p>
+      <button class="btn primary wide" type="submit">Unlock</button>
+    </form>
+
+    <form id="setup-form" hidden>
+      <h1>Create your timeline</h1>
+      <p class="muted">No saved timeline was found. Pick a passphrase. It encrypts your events before they are stored on GitHub.
+        <strong>If you forget it, the data cannot be recovered.</strong></p>
+      <label class="field">
+        <span>New passphrase (at least 10 characters)</span>
+        <input id="setup-pass" type="password" autocomplete="new-password" minlength="10" required>
+      </label>
+      <label class="field">
+        <span>Repeat passphrase</span>
+        <input id="setup-pass2" type="password" autocomplete="new-password" minlength="10" required>
+      </label>
+      <label class="field">
+        <span>Start from a JSON file (optional)</span>
+        <input id="setup-file" type="file" accept=".json,application/json">
+      </label>
+      <p id="setup-error" class="error" hidden></p>
+      <button class="btn primary wide" type="submit">Create timeline</button>
+      <button id="demo-btn" class="btn ghost wide" type="button">Just try it with sample events</button>
+    </form>
+  </div>
+</section>
+
+<!-- ============ Main app ============ -->
+<div id="app" class="app" hidden>
+  <header class="topbar">
+    <button id="title-btn" class="title-btn" title="Rename timeline"></button>
+    <div class="toolbar">
+      <button id="new-btn" class="btn primary" title="New event (N)">＋ New event</button>
+      <button id="list-btn" class="btn icon" title="Event list (L)" aria-label="Event list">☰</button>
+      <button id="fit-btn" class="btn icon" title="Show all events (F)" aria-label="Show all">⤢</button>
+      <button id="today-btn" class="btn" title="Go to today (T)">Today</button>
+      <button id="save-btn" class="btn save" title="Save to GitHub (Ctrl+S)">Save</button>
+      <div class="menu-wrap">
+        <button id="menu-btn" class="btn icon" aria-haspopup="true" aria-label="More">⋯</button>
+        <div id="menu" class="menu" hidden>
+          <button data-action="settings">GitHub connection…</button>
+          <button data-action="export">Download backup (unencrypted)</button>
+          <button data-action="import">Import from JSON…</button>
+          <button data-action="passphrase">Change passphrase…</button>
+          <hr>
+          <button data-action="help">Help &amp; shortcuts</button>
+          <button data-action="lock">Lock</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main id="stage" class="stage" tabindex="0" aria-label="Timeline. Drag to move, scroll to zoom, double-click to add an event."></main>
+
+  <div class="zoom">
+    <button id="zoom-in" class="btn icon" aria-label="Zoom in">＋</button>
+    <button id="zoom-out" class="btn icon" aria-label="Zoom out">−</button>
+  </div>
+
+  <footer id="overview" class="overview" aria-label="Overview"></footer>
+
+  <aside id="list-panel" class="list-panel" hidden>
+    <div class="list-head">
+      <input id="list-search" type="search" placeholder="Search events…" aria-label="Search events">
+      <button id="list-close" class="btn icon" aria-label="Close list">✕</button>
+    </div>
+    <ol id="list-items" class="list-items"></ol>
+  </aside>
+
+  <div id="detail" class="detail" hidden>
+    <button id="detail-close" class="btn icon detail-x" aria-label="Close">✕</button>
+    <div id="detail-color" class="detail-color"></div>
+    <p id="detail-date" class="detail-date"></p>
+    <h2 id="detail-title"></h2>
+    <p id="detail-desc" class="detail-desc"></p>
+    <div class="detail-actions">
+      <button id="detail-edit" class="btn primary">Edit</button>
+      <button id="detail-dup" class="btn">Duplicate</button>
+      <button id="detail-del" class="btn danger">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Event editor ============ -->
+<dialog id="editor" class="dialog">
+  <form id="editor-form" method="dialog">
+    <h2 id="editor-heading">New event</h2>
+    <label class="field">
+      <span>Text on the timeline</span>
+      <textarea id="ed-title" rows="3" required placeholder="e.g. 4th Aug&#10;Theory test"></textarea>
+    </label>
+    <label class="field">
+      <span>Details (shown when you click the event)</span>
+      <textarea id="ed-desc" rows="3"></textarea>
+    </label>
+    <div class="row">
+      <label class="field"><span>Date</span><input id="ed-date" type="date" required></label>
+      <label class="field"><span>Time (optional)</span><input id="ed-time" type="time"></label>
+    </div>
+    <label class="check"><input id="ed-has-end" type="checkbox"> This is a period (has an end date)</label>
+    <div id="ed-end-row" class="row" hidden>
+      <label class="field"><span>End date</span><input id="ed-end-date" type="date"></label>
+      <label class="field"><span>End time (optional)</span><input id="ed-end-time" type="time"></label>
+    </div>
+    <div class="row">
+      <label class="field"><span>Look</span>
+        <select id="ed-style">
+          <option value="card">Card</option>
+          <option value="pill">Badge</option>
+          <option value="span" data-range>Shaded period</option>
+          <option value="bar" data-range>Bar</option>
+        </select>
+      </label>
+      <label class="field"><span>Position</span>
+        <select id="ed-side">
+          <option value="above">Above the line</option>
+          <option value="below">Below the line</option>
+        </select>
+      </label>
+    </div>
+    <div class="field">
+      <span>Color</span>
+      <div id="ed-colors" class="swatches" role="radiogroup" aria-label="Color"></div>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" id="ed-cancel" class="btn">Cancel</button>
+      <button type="submit" class="btn primary">Done</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ GitHub settings ============ -->
+<dialog id="settings" class="dialog">
+  <form id="settings-form" method="dialog">
+    <h2>GitHub connection</h2>
+    <p class="muted small">Saving writes the encrypted file <code>data/timeline.enc.json</code> to your repository.
+      The token is kept only in this browser on this device.</p>
+    <div class="row">
+      <label class="field"><span>Username</span><input id="gh-owner" required autocomplete="off" spellcheck="false"></label>
+      <label class="field"><span>Repository</span><input id="gh-repo" required autocomplete="off" spellcheck="false"></label>
+    </div>
+    <label class="field"><span>Branch</span><input id="gh-branch" value="main" required autocomplete="off" spellcheck="false"></label>
+    <label class="field">
+      <span>Fine-grained access token</span>
+      <input id="gh-token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
+    </label>
+    <details class="small">
+      <summary>How to make a token</summary>
+      <ol>
+        <li>On GitHub: Settings → Developer settings → Personal access tokens → <b>Fine-grained tokens</b> → Generate new token.</li>
+        <li>Repository access: <b>Only select repositories</b> → pick this timeline repo.</li>
+        <li>Permissions → Repository permissions → <b>Contents: Read and write</b>. Nothing else.</li>
+        <li>Generate, copy it, and paste it here.</li>
+      </ol>
+    </details>
+    <p id="gh-status" class="small" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" id="gh-forget" class="btn danger">Forget token</button>
+      <span class="spacer"></span>
+      <button type="button" id="gh-cancel" class="btn">Cancel</button>
+      <button type="submit" class="btn primary">Test &amp; save</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ Change passphrase ============ -->
+<dialog id="pass-dialog" class="dialog">
+  <form id="pass-form" method="dialog">
+    <h2>Change passphrase</h2>
+    <p class="muted small">The new passphrase applies the next time you press Save.</p>
+    <label class="field"><span>New passphrase (at least 10 characters)</span><input id="np1" type="password" minlength="10" required autocomplete="new-password"></label>
+    <label class="field"><span>Repeat</span><input id="np2" type="password" minlength="10" required autocomplete="new-password"></label>
+    <p id="np-error" class="error" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" id="np-cancel" class="btn">Cancel</button>
+      <button type="submit" class="btn primary">Change</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ Help ============ -->
+<dialog id="help" class="dialog">
+  <h2>Help &amp; shortcuts</h2>
+  <ul class="help-list">
+    <li><b>Drag</b> the timeline to move it. <b>Scroll</b> or pinch to zoom.</li>
+    <li><b>Double-click</b> an empty spot to add an event on that date.</li>
+    <li><b>Click</b> an event to see details, edit or delete it.</li>
+    <li>Click or drag the <b>overview strip</b> at the bottom to jump.</li>
+    <li><kbd>←</kbd> <kbd>→</kbd> move · <kbd>↑</kbd> <kbd>↓</kbd> scroll up/down · <kbd>+</kbd> <kbd>−</kbd> zoom</li>
+    <li><kbd>N</kbd> new event · <kbd>L</kbd> list · <kbd>F</kbd> show all · <kbd>T</kbd> today · <kbd>Ctrl</kbd>+<kbd>S</kbd> save</li>
+    <li>Changes stay in this tab until you press <b>Save</b>. The public site shows the new version about a minute later.</li>
+  </ul>
+  <div class="dialog-actions"><button id="help-close" class="btn primary">Close</button></div>
+</dialog>
+
+<input id="import-file" type="file" accept=".json,application/json" hidden>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

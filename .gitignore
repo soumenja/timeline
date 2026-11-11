@@ -1,0 +1,4 @@
+# Unencrypted timeline exports and imports. NEVER upload these: the site is public.
+private/
+*.plain.json
+timeline-backup-*.json
