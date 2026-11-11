@@ -225,6 +225,21 @@
   <div class="dialog-actions"><button id="help-close" class="btn primary">Close</button></div>
 </dialog>
 
+<!-- ============ Confirm / text question ============ -->
+<dialog id="ask" class="dialog ask">
+  <form id="ask-form" method="dialog">
+    <p id="ask-text" class="ask-text"></p>
+    <label id="ask-field" class="field" hidden>
+      <span id="ask-label"></span>
+      <input id="ask-input" autocomplete="off">
+    </label>
+    <div class="dialog-actions">
+      <button type="button" id="ask-cancel" class="btn">Cancel</button>
+      <button type="submit" id="ask-ok" class="btn primary">OK</button>
+    </div>
+  </form>
+</dialog>
+
 <input id="import-file" type="file" accept=".json,application/json" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 </body>

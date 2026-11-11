@@ -31,6 +31,40 @@ function toast(msg, isErr = false, ms = 3800) {
   toast.timer = setTimeout(() => { t.hidden = true; }, ms);
 }
 
+/**
+ * In-page replacement for confirm()/prompt(), which some browsers and embedded views block.
+ * Resolves to true (confirm), the entered text (when `input` is given), or null if cancelled.
+ */
+function ask(text, { ok = 'OK', danger = false, input = null } = {}) {
+  return new Promise((resolve) => {
+    const dlg = $('ask');
+    $('ask-text').textContent = text;
+    $('ask-ok').textContent = ok;
+    $('ask-ok').classList.toggle('danger', danger);
+    $('ask-ok').classList.toggle('primary', !danger);
+    $('ask-field').hidden = !input;
+    if (input) {
+      $('ask-label').textContent = input.label || '';
+      $('ask-input').type = input.type || 'text';
+      $('ask-input').value = input.value || '';
+    }
+    let result = null;
+    const onSubmit = () => { result = input ? $('ask-input').value : true; };
+    const onCancel = () => dlg.close();
+    const onClose = () => {
+      $('ask-form').removeEventListener('submit', onSubmit);
+      $('ask-cancel').removeEventListener('click', onCancel);
+      dlg.removeEventListener('close', onClose);
+      resolve(result);
+    };
+    $('ask-form').addEventListener('submit', onSubmit);
+    $('ask-cancel').addEventListener('click', onCancel);
+    dlg.addEventListener('close', onClose);
+    dlg.showModal();
+    if (input) { $('ask-input').focus(); $('ask-input').select(); } else { $('ask-ok').focus(); }
+  });
+}
+
 function showError(id, msg) {
   const e = $(id);
   e.textContent = msg || '';
@@ -260,11 +294,11 @@ $('detail-dup').addEventListener('click', () => {
   openDetail(copy.id);
   openEditor(copy);
 });
-$('detail-del').addEventListener('click', () => {
+$('detail-del').addEventListener('click', async () => {
   const ev = state.data.events.find((e) => e.id === state.detailId);
   if (!ev) return;
   const name = ev.title.split('\n')[0].slice(0, 60);
-  if (!confirm(`Delete "${name}"?`)) return;
+  if (!(await ask(`Delete "${name}"?`, { ok: 'Delete', danger: true }))) return;
   change(() => { state.data.events = state.data.events.filter((e) => e.id !== ev.id); });
   closeDetail();
   toast('Event deleted. Press Save to keep the change.');
@@ -415,8 +449,8 @@ $('fit-btn').addEventListener('click', () => timeline.fit());
 $('today-btn').addEventListener('click', () => { timeline.offsetY = 0; timeline.centerOn(Date.now()); });
 $('zoom-in').addEventListener('click', () => timeline.zoomAt(1.5));
 $('zoom-out').addEventListener('click', () => timeline.zoomAt(1 / 1.5));
-$('title-btn').addEventListener('click', () => {
-  const t = prompt('Timeline name', state.data.title);
+$('title-btn').addEventListener('click', async () => {
+  const t = await ask('Rename this timeline', { ok: 'Rename', input: { label: 'Timeline name', value: state.data.title } });
   if (t && t.trim() && t.trim() !== state.data.title) change(() => { state.data.title = t.trim(); });
 });
 $('save-btn').addEventListener('click', save);
@@ -541,13 +575,13 @@ $('import-file').addEventListener('change', async (e) => {
   try {
     let raw = await readJSONFile(file);
     if (isEncryptedPayload(raw)) {
-      const p = prompt('This file is encrypted. Enter its passphrase:');
+      const p = await ask('This file is encrypted.', { ok: 'Unlock', input: { label: 'Its passphrase', type: 'password' } });
       if (!p) return;
       raw = await decryptJSON(raw, p);
     }
     const incoming = normalize(raw);
     if (!incoming.events.length) return toast('No events found in that file.', true);
-    if (!confirm(`Add ${incoming.events.length} events from "${file.name}"?\nEvents with the same id are replaced.`)) return;
+    if (!(await ask(`Add ${incoming.events.length} events from "${file.name}"?\nEvents with the same id are replaced.`, { ok: 'Import' }))) return;
     change(() => {
       const byId = new Map(state.data.events.map((x) => [x.id, x]));
       for (const ev of incoming.events) byId.set(ev.id, ev);
@@ -575,8 +609,8 @@ $('pass-form').addEventListener('submit', (e) => {
 
 $('help-close').addEventListener('click', () => $('help').close());
 
-function lock() {
-  if (state.dirty && !confirm('You have unsaved changes. Lock anyway and lose them?')) return;
+async function lock() {
+  if (state.dirty && !(await ask('You have unsaved changes. Lock anyway and lose them?', { ok: 'Lock', danger: true }))) return;
   state.dirty = false;
   rememberPass(null);
   location.reload();
