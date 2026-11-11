@@ -109,9 +109,20 @@ function normalize(raw) {
   };
 }
 
-/** The whole library: { version: 2, timelines[] }. Also accepts a single timeline (older format). */
+/**
+ * The whole library: { version: 2, timelines[], sync? }. Also accepts a single timeline (older format).
+ * `sync` holds the GitHub connection (including the token). It lives inside the encrypted file, so any
+ * browser that knows the passphrase can save without asking for the token again.
+ */
 function normalizeLib(raw) {
-  if (raw && Array.isArray(raw.timelines)) return { version: 2, timelines: raw.timelines.map(normalize) };
+  if (raw && Array.isArray(raw.timelines)) {
+    const lib = { version: 2, timelines: raw.timelines.map(normalize) };
+    const s = raw.sync;
+    if (s && typeof s.token === 'string' && s.token && s.owner && s.repo) {
+      lib.sync = { owner: String(s.owner), repo: String(s.repo), branch: String(s.branch || 'main'), token: s.token };
+    }
+    return lib;
+  }
   if (Array.isArray(raw) && raw.length && raw[0] && Array.isArray(raw[0].events)) return { version: 2, timelines: raw.map(normalize) };
   if (raw && (Array.isArray(raw.events) || Array.isArray(raw))) return { version: 2, timelines: [normalize(raw)] };
   return { version: 2, timelines: [] };
@@ -270,6 +281,36 @@ function openApp(raw, pass) {
     overview = new Overview($('overview'), timeline);
   }
   route();
+  adoptSyncFromLibrary();
+}
+
+// If this browser has no token yet but the unlocked file carries one, use it, then make sure we show the
+// newest saved version (the public website copy can lag a minute or two behind GitHub).
+async function adoptSyncFromLibrary() {
+  if (state.demo) return;
+  const s = state.lib.sync;
+  if (!store.ready && s) {
+    store = new GitHubStore(s);
+    saveSettings(s);
+  } else if (store.ready && !s) {
+    // Older file without the connection inside: add it on the next save.
+    state.lib.sync = { owner: store.owner, repo: store.repo, branch: store.branch, token: store.token };
+  }
+  if (!store.ready || state.dirty) return;
+  try {
+    const latest = await store.read();
+    if (latest && isEncryptedPayload(latest) && state.payload && latest.data !== state.payload.data && !state.dirty) {
+      const fresh = await decryptJSON(latest, state.pass);
+      if (state.dirty) return;
+      state.payload = latest;
+      const openId = state.data && state.data.id;
+      state.lib = normalizeLib(fresh);
+      if (!state.lib.sync) state.lib.sync = { owner: store.owner, repo: store.repo, branch: store.branch, token: store.token };
+      if (openId && state.lib.timelines.some((t) => t.id === openId)) openTimeline(openId, false); else showHome(false);
+    }
+  } catch (err) {
+    console.warn('Could not check GitHub for a newer version:', err);
+  }
 }
 
 /* ================= home & navigation ================= */
@@ -431,9 +472,37 @@ async function deleteTimeline() {
 function markDirty() {
   if (state.demo) return;
   state.dirty = true;
+  state.version = (state.version || 0) + 1;
   $('save-btn').classList.add('dirty');
   $('save-btn').textContent = 'Save •';
+  scheduleAutosave();
 }
+
+/* ================= autosave ================= */
+
+const AUTOSAVE_KEY = 'timeline.autosave';
+const AUTOSAVE_DELAY = 10000; // save 10 s after the last change
+let autosaveTimer = null;
+
+function autosaveOn() {
+  try { return localStorage.getItem(AUTOSAVE_KEY) !== 'off'; } catch { return true; }
+}
+
+function scheduleAutosave(delay = AUTOSAVE_DELAY) {
+  clearTimeout(autosaveTimer);
+  if (!autosaveOn() || state.demo || !state.dirty || !store || !store.ready) return;
+  autosaveTimer = setTimeout(() => save({ auto: true }), delay);
+}
+
+function renderAutosaveItem() {
+  const b = menu.querySelector('[data-action="autosave"]');
+  if (b) b.textContent = `Autosave: ${autosaveOn() ? 'On' : 'Off'}`;
+}
+
+// Leaving or hiding the tab saves straight away instead of waiting.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && state.dirty && autosaveOn()) save({ auto: true });
+});
 
 function refresh() {
   if (!state.data) { renderHome(); return; }
@@ -642,7 +711,7 @@ $('today-btn').addEventListener('click', () => { timeline.offsetY = 0; timeline.
 $('zoom-in').addEventListener('click', () => timeline.zoomAt(1.5));
 $('zoom-out').addEventListener('click', () => timeline.zoomAt(1 / 1.5));
 $('title-btn').addEventListener('click', renameTimeline);
-$('save-btn').addEventListener('click', save);
+$('save-btn').addEventListener('click', () => save());
 
 const menu = $('menu');
 $('menu-btn').addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; });
@@ -663,37 +732,65 @@ menu.addEventListener('click', (e) => {
       $('np1').value = ''; $('np2').value = ''; showError('np-error', '');
       $('pass-dialog').showModal();
     },
+    autosave: () => {
+      const on = !autosaveOn();
+      try { localStorage.setItem(AUTOSAVE_KEY, on ? 'on' : 'off'); } catch { /* ignore */ }
+      renderAutosaveItem();
+      if (on) scheduleAutosave(1000); else clearTimeout(autosaveTimer);
+      toast(on ? 'Autosave on: changes save 10 seconds after you stop editing.' : 'Autosave off: press Save (Ctrl+S) to save.');
+    },
     help: () => $('help').showModal(),
     lock,
   })[action]();
 });
+renderAutosaveItem();
 
 /* ================= save / GitHub ================= */
 
-async function save() {
-  if (state.demo) return toast('Sample mode: nothing is saved. Reload the page to create your own timeline.');
+let saving = null; // the save in progress, so two saves never overlap
+
+async function save({ auto = false } = {}) {
+  if (state.demo) { if (!auto) toast('Sample mode: nothing is saved. Reload the page to create your own timeline.'); return; }
   if (!store.ready) {
+    if (auto) return;
     toast('Connect your GitHub repository first.');
     openSettings();
     return;
   }
+  if (saving) { await saving; if (!state.dirty) return; }
+  if (auto && !state.dirty) return;
+  clearTimeout(autosaveTimer);
   const btn = $('save-btn');
+  const versionAtStart = state.version || 0;
   btn.disabled = true;
   btn.textContent = 'Saving…';
-  try {
-    const payload = await encryptJSON(state.lib, state.pass);
-    const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
-    await store.write(payload, `Update timelines (${stamp})`);
-    state.dirty = false;
-    btn.classList.remove('dirty');
-    btn.textContent = 'Save';
-    toast('Saved to GitHub ✓ The website shows it in about a minute.');
-  } catch (err) {
-    btn.textContent = state.dirty ? 'Save •' : 'Save';
-    toast(err.message, true, 7000);
-  } finally {
-    btn.disabled = false;
-  }
+  saving = (async () => {
+    try {
+      if (!state.lib.sync) state.lib.sync = { owner: store.owner, repo: store.repo, branch: store.branch, token: store.token };
+      const payload = await encryptJSON(state.lib, state.pass);
+      const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+      await store.write(payload, `${auto ? 'Autosave' : 'Update'} timelines (${stamp})`);
+      state.payload = payload;
+      if ((state.version || 0) === versionAtStart) {
+        state.dirty = false;
+        btn.classList.remove('dirty');
+        const t = new Date();
+        btn.textContent = auto ? `Saved ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}` : 'Save';
+        btn.title = 'All changes saved to GitHub (Ctrl+S saves now)';
+        if (!auto) toast('Saved to GitHub ✓');
+      } else {
+        btn.textContent = 'Save •'; // edited while saving: save again shortly
+        scheduleAutosave();
+      }
+    } catch (err) {
+      btn.textContent = 'Save •';
+      toast((auto ? 'Autosave failed: ' : '') + err.message, true, 8000);
+    } finally {
+      btn.disabled = false;
+    }
+  })();
+  await saving;
+  saving = null;
 }
 
 function openSettings() {
@@ -712,7 +809,14 @@ $('gh-forget').addEventListener('click', () => {
   saveSettings(s);
   store = new GitHubStore(s);
   $('gh-token').value = '';
-  toast('Token removed from this browser.');
+  clearTimeout(autosaveTimer);
+  if (state.lib && state.lib.sync) {
+    delete state.lib.sync;
+    state.dirty = true;
+    $('save-btn').classList.add('dirty');
+    $('save-btn').textContent = 'Save •';
+  }
+  toast('Token removed from this browser. To also remove it from the saved file, paste a new token and save once.', false, 8000);
 });
 
 $('settings-form').addEventListener('submit', async (e) => {
@@ -741,7 +845,14 @@ $('settings-form').addEventListener('submit', async (e) => {
     store = candidate;
     saveSettings(s);
     $('settings').close();
-    toast(state.dirty ? 'Connected ✓ Press Save to store your changes.' : 'Connected to GitHub ✓');
+    if (state.lib && !state.demo) {
+      state.lib.sync = s; // remembered inside the encrypted file, so other browsers only need the passphrase
+      markDirty();
+      toast('Connected ✓ Saving now. Next time, your passphrase is all you need.');
+      save({ auto: true });
+    } else {
+      toast('Connected to GitHub ✓');
+    }
   } catch (err) {
     status.className = 'small error';
     status.textContent = err.message;
@@ -751,7 +862,8 @@ $('settings-form').addEventListener('submit', async (e) => {
 /* ================= export / import / passphrase / lock ================= */
 
 function exportBackup() {
-  const blob = new Blob([JSON.stringify(state.lib, null, 2)], { type: 'application/json' });
+  const { sync, ...withoutToken } = state.lib; // never put the token in an unencrypted file
+  const blob = new Blob([JSON.stringify(withoutToken, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `timeline-backup-${new Date().toISOString().slice(0, 10)}.json`;

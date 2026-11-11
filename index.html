@@ -82,6 +82,7 @@
           <button data-action="export">Download backup (unencrypted)</button>
           <button data-action="import">Import from JSON…</button>
           <button data-action="passphrase">Change passphrase…</button>
+          <button data-action="autosave">Autosave: On</button>
           <hr>
           <button data-action="help">Help &amp; shortcuts</button>
           <button data-action="lock">Lock</button>
@@ -182,7 +183,7 @@
   <form id="settings-form" method="dialog">
     <h2>GitHub connection</h2>
     <p class="muted small">Saving writes the encrypted file <code>data/timeline.enc.json</code> to your repository.
-      The token is kept only in this browser on this device.</p>
+      You only need to do this once: the token is stored inside that encrypted file, so on any browser your passphrase is enough.</p>
     <div class="row">
       <label class="field"><span>Username</span><input id="gh-owner" required autocomplete="off" spellcheck="false"></label>
       <label class="field"><span>Repository</span><input id="gh-repo" required autocomplete="off" spellcheck="false"></label>
@@ -238,7 +239,7 @@
     <li>Click or drag the <b>overview strip</b> at the bottom to jump.</li>
     <li><kbd>←</kbd> <kbd>→</kbd> move · <kbd>↑</kbd> <kbd>↓</kbd> scroll up/down · <kbd>+</kbd> <kbd>−</kbd> zoom</li>
     <li><kbd>N</kbd> new event · <kbd>L</kbd> list · <kbd>F</kbd> show all · <kbd>T</kbd> today · <kbd>Ctrl</kbd>+<kbd>S</kbd> save</li>
-    <li>Changes stay in this tab until you press <b>Save</b>. The public site shows the new version about a minute later.</li>
+    <li><b>Autosave</b> saves to GitHub 10 seconds after you stop editing, and when you leave the tab. Turn it off in the <b>⋯</b> menu; <kbd>Ctrl</kbd>+<kbd>S</kbd> always saves straight away.</li>
   </ul>
   <div class="dialog-actions"><button id="help-close" class="btn primary">Close</button></div>
 </dialog>
