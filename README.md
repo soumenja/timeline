@@ -4,6 +4,8 @@ A personal, zoomable timeline website hosted free on GitHub Pages.
 Events are **encrypted with your passphrase** in the browser before they are saved, so the public site
 shows only a lock screen to anyone without the passphrase.
 
+**Live site:** https://soumenja.github.io/timeline/
+
 ## One-time setup (GitHub Desktop)
 
 ### 1. Put this folder on GitHub
