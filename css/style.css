@@ -99,6 +99,45 @@ kbd { font: 12px/1 ui-monospace, Consolas, monospace; border: 1px solid var(--bo
 .menu button:hover { background: #f2f4f6; }
 .menu hr { border: 0; border-top: 1px solid var(--border); margin: 6px 0; }
 
+/* ---------- modes: home (all timelines) vs one timeline ---------- */
+.app.mode-home .only-tl, .app.mode-tl .only-home { display: none !important; }
+
+.brand-mark { display: inline-flex; flex-direction: column; gap: 3px; margin-right: 2px; }
+.brand-mark i { display: block; height: 5px; border-radius: 2px; background: #1898e0; width: 22px; }
+.brand-mark i:nth-child(2) { background: #37a70b; width: 16px; margin-left: 6px; }
+.brand-mark i:nth-child(3) { background: #f56c00; width: 12px; }
+.brand-name { font-size: 18px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.btn.create { background: #e8590c !important; border-color: #e8590c !important; color: #fff !important; font-weight: 600; }
+.btn.create:hover { background: #d14f08 !important; }
+.btn.back { white-space: nowrap; }
+.menu .danger-text { color: var(--danger); }
+
+.home { flex: 1; overflow: auto; background: #243142; color: #e9eef3; }
+.home-inner { max-width: 1180px; margin: 0 auto; padding: 24px max(16px, env(safe-area-inset-left, 0px)) 40px max(16px, env(safe-area-inset-right, 0px)); }
+.home-title { font-size: 22px; font-weight: 600; margin: 4px 0 20px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 22px 18px; }
+.tcard {
+  display: flex; flex-direction: column; text-align: left; background: none; border: 0; padding: 0; color: inherit; cursor: pointer; min-width: 0;
+}
+.tcard-preview {
+  position: relative; height: 112px; border-radius: 10px; background: #1b2633; overflow: hidden;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.tcard:hover .tcard-preview, .tcard:focus-visible .tcard-preview { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(0, 0, 0, .35); }
+.tcard:focus-visible { outline: none; }
+.tcard:focus-visible .tcard-preview { outline: 2px solid #1898e0; outline-offset: 2px; }
+.tcard-preview svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.tcard-badge {
+  position: absolute; left: 6px; top: 6px; z-index: 1; font-size: 13px; font-weight: 600; color: #fff;
+  background: #8b1c1c; padding: 3px 9px; border-radius: 6px;
+}
+.tcard-title { font-weight: 700; font-size: 15px; margin: 10px 2px 4px; line-height: 1.3; overflow-wrap: anywhere; }
+.tcard-meta { font-size: 13px; color: #9fb0c0; margin: 0 2px; font-variant-numeric: tabular-nums; }
+.tcard.new .tcard-preview {
+  background: transparent; border: 2px dashed #4a5d72; display: grid; place-items: center; color: #b8c6d4; font-weight: 600;
+}
+.tcard.new:hover .tcard-preview { border-color: #e8590c; color: #fff; }
+
 /* ---------- timeline stage ---------- */
 .stage {
   position: relative; flex: 1; overflow: hidden; cursor: grab; touch-action: none;
@@ -246,7 +285,8 @@ summary { cursor: pointer; color: #1570b8; }
 @media (max-width: 640px) {
   .topbar { gap: 6px; padding: 0 8px; }
   .title-btn { font-size: 15px; }
-  #today-btn, #fit-btn { display: none; }
+  #today-btn, #fit-btn, .back-text, .brand-name { display: none; }
+  .btn.create { padding: 6px 10px; }
   #new-btn { padding: 6px 10px; }
   .zoom { right: 10px; }
   .ev-card { max-width: 200px; font-size: 12px; }

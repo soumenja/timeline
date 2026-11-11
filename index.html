@@ -35,8 +35,8 @@
     </form>
 
     <form id="setup-form" hidden>
-      <h1>Create your timeline</h1>
-      <p class="muted">No saved timeline was found. Pick a passphrase. It encrypts your events before they are stored on GitHub.
+      <h1>Set up your timelines</h1>
+      <p class="muted">No saved timelines were found. Pick a passphrase. It encrypts your events before they are stored on GitHub.
         <strong>If you forget it, the data cannot be recovered.</strong></p>
       <label class="field">
         <span>New passphrase (at least 10 characters)</span>
@@ -51,25 +51,33 @@
         <input id="setup-file" type="file" accept=".json,application/json">
       </label>
       <p id="setup-error" class="error" hidden></p>
-      <button class="btn primary wide" type="submit">Create timeline</button>
+      <button class="btn primary wide" type="submit">Continue</button>
       <button id="demo-btn" class="btn ghost wide" type="button">Just try it with sample events</button>
     </form>
   </div>
 </section>
 
 <!-- ============ Main app ============ -->
-<div id="app" class="app" hidden>
+<div id="app" class="app mode-home" hidden>
   <header class="topbar">
-    <button id="title-btn" class="title-btn" title="Rename timeline"></button>
+    <div class="brand only-home" aria-hidden="true"><span class="brand-mark"><i></i><i></i><i></i></span></div>
+    <span class="brand-name only-home">My Timelines</span>
+    <button id="back-btn" class="btn back only-tl" title="All timelines (Esc)">← <span class="back-text">All timelines</span></button>
+    <button id="title-btn" class="title-btn only-tl" title="Rename timeline"></button>
     <div class="toolbar">
-      <button id="new-btn" class="btn primary" title="New event (N)">＋ New event</button>
-      <button id="list-btn" class="btn icon" title="Event list (L)" aria-label="Event list">☰</button>
-      <button id="fit-btn" class="btn icon" title="Show all events (F)" aria-label="Show all">⤢</button>
-      <button id="today-btn" class="btn" title="Go to today (T)">Today</button>
+      <button id="create-btn" class="btn create only-home">✎ Create a timeline</button>
+      <button id="new-btn" class="btn primary only-tl" title="New event (N)">＋ New event</button>
+      <button id="list-btn" class="btn icon only-tl" title="Event list (L)" aria-label="Event list">☰</button>
+      <button id="fit-btn" class="btn icon only-tl" title="Show all events (F)" aria-label="Show all">⤢</button>
+      <button id="today-btn" class="btn only-tl" title="Go to today (T)">Today</button>
       <button id="save-btn" class="btn save" title="Save to GitHub (Ctrl+S)">Save</button>
       <div class="menu-wrap">
         <button id="menu-btn" class="btn icon" aria-haspopup="true" aria-label="More">⋯</button>
         <div id="menu" class="menu" hidden>
+          <button data-action="rename" class="only-tl">Rename this timeline…</button>
+          <button data-action="duplicate" class="only-tl">Duplicate this timeline</button>
+          <button data-action="delete" class="only-tl danger-text">Delete this timeline…</button>
+          <hr class="only-tl">
           <button data-action="settings">GitHub connection…</button>
           <button data-action="export">Download backup (unencrypted)</button>
           <button data-action="import">Import from JSON…</button>
@@ -82,14 +90,22 @@
     </div>
   </header>
 
-  <main id="stage" class="stage" tabindex="0" aria-label="Timeline. Drag to move, scroll to zoom, double-click to add an event."></main>
+  <!-- Home: all timelines -->
+  <main id="home" class="home only-home">
+    <div class="home-inner">
+      <h1 class="home-title">My timelines</h1>
+      <div id="grid" class="grid"></div>
+    </div>
+  </main>
 
-  <div class="zoom">
+  <main id="stage" class="stage only-tl" tabindex="0" aria-label="Timeline. Drag to move, scroll to zoom, double-click to add an event."></main>
+
+  <div class="zoom only-tl">
     <button id="zoom-in" class="btn icon" aria-label="Zoom in">＋</button>
     <button id="zoom-out" class="btn icon" aria-label="Zoom out">−</button>
   </div>
 
-  <footer id="overview" class="overview" aria-label="Overview"></footer>
+  <footer id="overview" class="overview only-tl" aria-label="Overview"></footer>
 
   <aside id="list-panel" class="list-panel" hidden>
     <div class="list-head">
@@ -103,7 +119,7 @@
     <button id="detail-close" class="btn icon detail-x" aria-label="Close">✕</button>
     <div id="detail-color" class="detail-color"></div>
     <p id="detail-date" class="detail-date"></p>
-    <h2 id="detail-title"></h2>
+    <h2 id="detail-title" class="detail-title"></h2>
     <p id="detail-desc" class="detail-desc"></p>
     <div class="detail-actions">
       <button id="detail-edit" class="btn primary">Edit</button>
@@ -214,6 +230,8 @@
 <dialog id="help" class="dialog">
   <h2>Help &amp; shortcuts</h2>
   <ul class="help-list">
+    <li>The home page shows all your timelines. <b>Create a timeline</b> adds a new one; click a card to open it.</li>
+    <li><b>← All timelines</b> (or <kbd>Esc</kbd>) goes back. Rename, duplicate or delete a timeline from the <b>⋯</b> menu.</li>
     <li><b>Drag</b> the timeline to move it. <b>Scroll</b> or pinch to zoom.</li>
     <li><b>Double-click</b> an empty spot to add an event on that date.</li>
     <li><b>Click</b> an event to see details, edit or delete it.</li>

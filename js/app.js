@@ -8,7 +8,8 @@ const PASS_KEY = 'timeline.pass';
 const PALETTE = ['#37a70b', '#a70b0b', '#1898e0', '#f56c00', '#7b3fe4', '#0e9f9a', '#d6a100', '#2c3d4d'];
 
 const state = {
-  data: { title: 'My Timeline', events: [] },
+  lib: null,  // { version: 2, timelines: [...] } — everything that gets encrypted and saved
+  data: null, // the timeline currently open (one of lib.timelines), or null on the home page
   pass: null,
   dirty: false,
   demo: false,
@@ -87,6 +88,7 @@ function newId() {
   return (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)).slice(0, 12);
 }
 
+/** One timeline: { id, title, updated, events[] }. */
 function normalize(raw) {
   const src = Array.isArray(raw) ? { events: raw } : (raw || {});
   const events = (Array.isArray(src.events) ? src.events : []).map((e) => ({
@@ -99,7 +101,35 @@ function normalize(raw) {
     color: /^#[0-9a-f]{6}$/i.test(e.color || '') ? e.color : PALETTE[0],
     side: e.side === 'below' ? 'below' : 'above',
   })).filter((e) => !isNaN(parseDate(e.start)));
-  return { title: String(src.title || 'My Timeline'), events };
+  return {
+    id: String(src.id || newId()),
+    title: String(src.title || 'Untitled timeline'),
+    updated: typeof src.updated === 'string' ? src.updated : new Date().toISOString(),
+    events,
+  };
+}
+
+/** The whole library: { version: 2, timelines[] }. Also accepts a single timeline (older format). */
+function normalizeLib(raw) {
+  if (raw && Array.isArray(raw.timelines)) return { version: 2, timelines: raw.timelines.map(normalize) };
+  if (Array.isArray(raw) && raw.length && raw[0] && Array.isArray(raw[0].events)) return { version: 2, timelines: raw.map(normalize) };
+  if (raw && (Array.isArray(raw.events) || Array.isArray(raw))) return { version: 2, timelines: [normalize(raw)] };
+  return { version: 2, timelines: [] };
+}
+
+function relTime(iso) {
+  const t = Date.parse(iso);
+  if (isNaN(t)) return '';
+  const s = (Date.now() - t) / 1000;
+  if (s < 60) return 'just now';
+  const m = s / 60, h = m / 60, d = h / 24;
+  if (m < 60) return `${Math.floor(m)} min ago`;
+  if (h < 24) return `${Math.floor(h)} h ago`;
+  if (d < 2) return 'yesterday';
+  if (d < 30) return `${Math.floor(d)} days ago`;
+  if (d < 365) { const mo = Math.floor(d / 30.44); return mo <= 1 ? 'a month ago' : `${mo} months ago`; }
+  const dt = new Date(t);
+  return `${dt.getDate()} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][dt.getMonth()]} ${dt.getFullYear()}`;
 }
 
 function loadSettings() {
@@ -187,7 +217,7 @@ $('setup-form').addEventListener('submit', async (e) => {
   const p1 = $('setup-pass').value, p2 = $('setup-pass2').value;
   if (p1.length < 10) return showError('setup-error', 'Use at least 10 characters.');
   if (p1 !== p2) return showError('setup-error', 'The two passphrases do not match.');
-  let data = { title: 'My Timeline', events: [] };
+  let data = { version: 2, timelines: [] };
   const file = $('setup-file').files[0];
   if (file) {
     try {
@@ -199,13 +229,13 @@ $('setup-form').addEventListener('submit', async (e) => {
   rememberPass(p1);
   openApp(data, p1);
   markDirty();
-  toast('Timeline created. Connect GitHub (⋯ menu) and press Save to store it.', false, 7000);
+  toast('Created. Connect GitHub (⋯ menu) and press Save to store it.', false, 7000);
 });
 
 $('demo-btn').addEventListener('click', () => {
   state.demo = true;
   const y = new Date().getFullYear();
-  openApp({
+  openApp({ timelines: [{
     title: 'Sample timeline',
     events: [
       { title: 'Started the course', start: `${y}-01-12`, side: 'above', color: '#37a70b' },
@@ -215,12 +245,19 @@ $('demo-btn').addEventListener('click', () => {
       { title: 'Application sent', start: `${y}-03-02T10:30`, side: 'below', color: '#f56c00' },
       { title: 'Milestone', start: `${y}-04-05`, style: 'pill', side: 'below', color: '#7b3fe4' },
     ],
-  }, null);
+  }, {
+    title: 'Sample project',
+    events: [
+      { title: 'Kick-off', start: `${y}-05-02`, side: 'above', color: '#1898e0' },
+      { title: 'Build phase', start: `${y}-05-05`, end: `${y}-06-20`, style: 'bar', side: 'below', color: '#37a70b' },
+      { title: 'Review', start: `${y}-06-25`, style: 'pill', side: 'above', color: '#a70b0b' },
+    ],
+  }] }, null);
   toast('Sample mode: changes are not saved.', false, 5000);
 });
 
 function openApp(raw, pass) {
-  state.data = normalize(raw);
+  state.lib = normalizeLib(raw);
   state.pass = pass;
   $('gate').hidden = true;
   $('app').hidden = false;
@@ -232,9 +269,161 @@ function openApp(raw, pass) {
     });
     overview = new Overview($('overview'), timeline);
   }
+  route();
+}
+
+/* ================= home & navigation ================= */
+
+// The address bar remembers which timeline is open (#t-<id>) so reload/back work.
+function route() {
+  const m = /^#t-(.+)$/.exec(location.hash);
+  const tl = m && state.lib.timelines.find((t) => t.id === decodeURIComponent(m[1]));
+  if (tl) openTimeline(tl.id, false); else showHome(false);
+}
+window.addEventListener('hashchange', () => { if (state.lib) route(); });
+
+function setMode(mode) {
+  $('app').classList.toggle('mode-home', mode === 'home');
+  $('app').classList.toggle('mode-tl', mode === 'tl');
+  $('menu').hidden = true;
+}
+
+function showHome(push = true) {
+  if (push && location.hash) { history.pushState(null, '', location.pathname + location.search); }
+  state.data = null;
+  closeDetail();
+  toggleList(false);
+  setMode('home');
+  document.title = 'My Timelines';
+  renderHome();
+}
+
+function openTimeline(id, push = true) {
+  const tl = state.lib.timelines.find((t) => t.id === id);
+  if (!tl) return showHome();
+  if (push) history.pushState(null, '', '#t-' + encodeURIComponent(id));
+  state.data = tl;
+  closeDetail();
+  setMode('tl');
   refresh();
   timeline.fit();
   $('stage').focus({ preventScroll: true });
+}
+
+function renderHome() {
+  const grid = $('grid');
+  grid.textContent = '';
+  const list = [...state.lib.timelines].sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
+  for (const tl of list) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'tcard';
+    const prev = document.createElement('div');
+    prev.className = 'tcard-preview';
+    const badge = document.createElement('span');
+    badge.className = 'tcard-badge';
+    badge.textContent = '🔒 Private';
+    prev.append(badge, previewSVG(tl.events));
+    const title = document.createElement('div');
+    title.className = 'tcard-title';
+    title.textContent = tl.title;
+    const meta = document.createElement('div');
+    meta.className = 'tcard-meta';
+    const n = tl.events.length;
+    meta.textContent = `${n} event${n === 1 ? '' : 's'} · ${relTime(tl.updated)}`;
+    card.append(prev, title, meta);
+    card.addEventListener('click', () => openTimeline(tl.id));
+    grid.appendChild(card);
+  }
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'tcard new';
+  const box = document.createElement('div');
+  box.className = 'tcard-preview';
+  box.textContent = '＋ Create a timeline';
+  add.append(box);
+  add.addEventListener('click', createTimeline);
+  grid.appendChild(add);
+}
+
+// Small picture of a timeline for its card: a line with dots above/below and bars for periods.
+function previewSVG(events) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 240 112');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('aria-hidden', 'true');
+  const mk = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); svg.appendChild(e); return e; };
+  const AXIS = 72; // a little below centre, so dots above the line clear the "Private" badge
+  mk('line', { x1: 8, x2: 232, y1: AXIS, y2: AXIS, stroke: '#4a5d72', 'stroke-width': 1 });
+  const evs = events.map((e) => ({ e, s: parseDate(e.start), en: isRange(e) ? parseDate(e.end) : null })).filter((x) => !isNaN(x.s));
+  if (!evs.length) return svg;
+  let lo = Math.min(...evs.map((x) => x.s)), hi = Math.max(...evs.map((x) => x.en ?? x.s));
+  if (hi - lo < DAY) { lo -= DAY; hi += DAY; }
+  const X = (t) => 16 + ((t - lo) / (hi - lo)) * 208;
+  const rows = { above: [], below: [] };
+  const rowOf = (side, x1, x2) => {
+    const r = rows[side];
+    let i = 0;
+    while (i < r.length && r[i] > x1 - 7) i++;
+    r[i] = x2;
+    return Math.min(i, 3);
+  };
+  evs.sort((a, b) => a.s - b.s);
+  for (const { e, s, en } of evs) {
+    const side = e.side === 'below' ? 'below' : 'above';
+    const dir = side === 'above' ? -1 : 1;
+    if (en !== null) {
+      const x1 = X(s), x2 = Math.max(X(en), x1 + 4);
+      const row = rowOf(side, x1, x2);
+      mk('rect', { x: x1, y: AXIS + dir * (8 + row * 8) - 2, width: x2 - x1, height: 4, rx: 2, fill: e.color, opacity: e.style === 'span' ? 0.55 : 1 });
+    } else {
+      const x = X(s);
+      const row = rowOf(side, x - 5, x + 5);
+      mk('circle', { cx: x, cy: AXIS + dir * (12 + row * 11), r: 5, fill: e.color, stroke: '#ffffff', 'stroke-width': 1.4 });
+    }
+  }
+  return svg;
+}
+
+async function createTimeline() {
+  if (!state.lib) return;
+  const name = await ask('Create a timeline', { ok: 'Create', input: { label: 'Timeline name', value: '' } });
+  if (name === null) return;
+  const tl = normalize({ title: name.trim() || 'Untitled timeline', events: [] });
+  state.lib.timelines.push(tl);
+  markDirty();
+  openTimeline(tl.id);
+  toast('Double-click anywhere on the timeline to add your first event.', false, 6000);
+}
+$('create-btn').addEventListener('click', createTimeline);
+$('back-btn').addEventListener('click', () => showHome());
+
+async function renameTimeline() {
+  if (!state.data) return;
+  const t = await ask('Rename this timeline', { ok: 'Rename', input: { label: 'Timeline name', value: state.data.title } });
+  if (t && t.trim() && t.trim() !== state.data.title) change(() => { state.data.title = t.trim(); });
+}
+
+function duplicateTimeline() {
+  if (!state.data) return;
+  const copy = normalize(JSON.parse(JSON.stringify({ ...state.data, id: newId(), title: state.data.title + ' (copy)' })));
+  copy.updated = new Date().toISOString();
+  state.lib.timelines.push(copy);
+  markDirty();
+  openTimeline(copy.id);
+  toast('Copy created.');
+}
+
+async function deleteTimeline() {
+  if (!state.data) return;
+  const tl = state.data;
+  const ok = await ask(`Delete the timeline "${tl.title}" and its ${tl.events.length} events?\nThis is permanent once you press Save.`, { ok: 'Delete timeline', danger: true });
+  if (!ok) return;
+  state.lib.timelines = state.lib.timelines.filter((t) => t !== tl);
+  markDirty();
+  showHome();
+  toast('Timeline deleted. Press Save to keep the change.');
 }
 
 /* ================= state changes ================= */
@@ -247,14 +436,17 @@ function markDirty() {
 }
 
 function refresh() {
+  if (!state.data) { renderHome(); return; }
   document.title = state.data.title;
   $('title-btn').textContent = state.data.title;
   timeline.setEvents(state.data.events);
   if (!$('list-panel').hidden) renderList();
 }
 
+// Apply a change to the open timeline.
 function change(fn) {
   fn();
+  if (state.data) state.data.updated = new Date().toISOString();
   markDirty();
   refresh();
 }
@@ -449,10 +641,7 @@ $('fit-btn').addEventListener('click', () => timeline.fit());
 $('today-btn').addEventListener('click', () => { timeline.offsetY = 0; timeline.centerOn(Date.now()); });
 $('zoom-in').addEventListener('click', () => timeline.zoomAt(1.5));
 $('zoom-out').addEventListener('click', () => timeline.zoomAt(1 / 1.5));
-$('title-btn').addEventListener('click', async () => {
-  const t = await ask('Rename this timeline', { ok: 'Rename', input: { label: 'Timeline name', value: state.data.title } });
-  if (t && t.trim() && t.trim() !== state.data.title) change(() => { state.data.title = t.trim(); });
-});
+$('title-btn').addEventListener('click', renameTimeline);
 $('save-btn').addEventListener('click', save);
 
 const menu = $('menu');
@@ -463,6 +652,9 @@ menu.addEventListener('click', (e) => {
   if (!action) return;
   menu.hidden = true;
   ({
+    rename: renameTimeline,
+    duplicate: duplicateTimeline,
+    delete: deleteTimeline,
     settings: openSettings,
     export: exportBackup,
     import: () => $('import-file').click(),
@@ -489,9 +681,9 @@ async function save() {
   btn.disabled = true;
   btn.textContent = 'Saving…';
   try {
-    const payload = await encryptJSON(state.data, state.pass);
+    const payload = await encryptJSON(state.lib, state.pass);
     const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
-    await store.write(payload, `Update timeline (${stamp})`);
+    await store.write(payload, `Update timelines (${stamp})`);
     state.dirty = false;
     btn.classList.remove('dirty');
     btn.textContent = 'Save';
@@ -559,7 +751,7 @@ $('settings-form').addEventListener('submit', async (e) => {
 /* ================= export / import / passphrase / lock ================= */
 
 function exportBackup() {
-  const blob = new Blob([JSON.stringify(state.data, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify(state.lib, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `timeline-backup-${new Date().toISOString().slice(0, 10)}.json`;
@@ -579,17 +771,18 @@ $('import-file').addEventListener('change', async (e) => {
       if (!p) return;
       raw = await decryptJSON(raw, p);
     }
-    const incoming = normalize(raw);
-    if (!incoming.events.length) return toast('No events found in that file.', true);
-    if (!(await ask(`Add ${incoming.events.length} events from "${file.name}"?\nEvents with the same id are replaced.`, { ok: 'Import' }))) return;
-    change(() => {
-      const byId = new Map(state.data.events.map((x) => [x.id, x]));
-      for (const ev of incoming.events) byId.set(ev.id, ev);
-      state.data.events = [...byId.values()];
-      if (state.data.title === 'My Timeline' && incoming.title !== 'My Timeline') state.data.title = incoming.title;
-    });
-    timeline.fit();
-    toast(`Imported ${incoming.events.length} events. Press Save to keep them.`);
+    const incoming = normalizeLib(raw).timelines.filter((t) => t.events.length);
+    if (!incoming.length) return toast('No events found in that file.', true);
+    const nEv = incoming.reduce((n, t) => n + t.events.length, 0);
+    const names = incoming.map((t) => '• ' + t.title).slice(0, 8).join('\n') + (incoming.length > 8 ? '\n…' : '');
+    if (!(await ask(`Add ${incoming.length} timeline${incoming.length === 1 ? '' : 's'} (${nEv} events) from "${file.name}"?\n${names}\n\nA timeline with the same id is replaced.`, { ok: 'Import' }))) return;
+    for (const t of incoming) {
+      const i = state.lib.timelines.findIndex((x) => x.id === t.id);
+      if (i >= 0) state.lib.timelines[i] = t; else state.lib.timelines.push(t);
+    }
+    markDirty();
+    showHome();
+    toast(`Imported ${incoming.length} timeline${incoming.length === 1 ? '' : 's'}. Press Save to keep them.`);
   } catch (err) {
     toast(err.message, true);
   }
@@ -628,8 +821,15 @@ document.addEventListener('keydown', (e) => {
   const tag = (e.target.tagName || '').toLowerCase();
   if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.toLowerCase();
-  if (k === 'escape') { closeDetail(); toggleList(false); menu.hidden = true; }
-  else if (k === 'n') { e.preventDefault(); $('new-btn').click(); }
+  const inTimeline = !!state.data;
+  if (k === 'escape') {
+    const somethingOpen = !$('detail').hidden || !$('list-panel').hidden || !menu.hidden;
+    closeDetail(); toggleList(false); menu.hidden = true;
+    if (!somethingOpen && inTimeline) showHome();
+    return;
+  }
+  if (!inTimeline) return;
+  if (k === 'n') { e.preventDefault(); $('new-btn').click(); }
   else if (k === 'l') toggleList();
   else if (k === 'f') timeline.fit();
   else if (k === 't') $('today-btn').click();

@@ -31,16 +31,19 @@ shows only a lock screen to anyone without the passphrase.
 3. Repository permissions → **Contents: Read and write**. Nothing else.
 4. Generate it and copy it. Never share it or put it in any file.
 
-### 4. Load your events
-1. Open your site. It shows **Create your timeline**.
+### 4. Load your timelines
+1. Open your site. It shows **Set up your timelines**.
 2. Choose a strong passphrase (and write it down somewhere safe: it **cannot be recovered**).
-3. Under *Start from a JSON file*, pick `private\pil-timeline.json` → **Create timeline**.
+3. Under *Start from a JSON file*, pick `private\time-graphics-import.json` (all 7 timelines copied from
+   time.graphics) → **Continue**. The home page shows one card per timeline.
 4. Menu **⋯ → GitHub connection…**: your username and repo name, branch `main`, paste the token → **Test & save**.
 5. Click **Save**. This writes `data/timeline.enc.json` (encrypted) to your repo.
 
 From now on, opening the site asks for your passphrase.
 
 ## Using it
+- The home page lists all your timelines. **Create a timeline** (orange button) starts a new one; click a card to open it,
+  **← All timelines** to go back. Rename, duplicate or delete a timeline from its **⋯** menu.
 - Drag to move · scroll / pinch to zoom · double-click empty space to add an event · click an event to edit it.
 - **Save** (or Ctrl+S) commits your changes to GitHub. The public site updates about a minute later.
 - **⋯ → Download backup** saves an unencrypted copy. Keep it private and don't add it to the repo.
